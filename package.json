@@ -18,7 +18,9 @@
     "ganache-core": "^2.13.2",
     "hardhat": "^2.19.0",
     "mocha": "^8.1.2",
-    "supertest": "^4.0.2"
+    "sinon": "^17.0.1",
+    "supertest": "^4.0.2",
+    "winston": "^3.11.0"
   },
   "homepage": "https://risklabs.foundation",
   "license": "AGPL-3.0-or-later",
