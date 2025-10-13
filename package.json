@@ -29,7 +29,7 @@
   "homepage": "https://risklabs.foundation",
   "license": "AGPL-3.0-or-later",
   "publishConfig": {
-    "registry": "https://registry.npmjs.org/",
+    "registry": "https://registry.npmjs.com",
     "access": "public"
   },
   "repository": {
