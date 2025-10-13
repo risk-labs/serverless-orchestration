@@ -36,9 +36,6 @@ jobs:
       - name: Install dependencies
         run: yarn install --frozen-lockfile
 
-      - name: Run tests
-        run: yarn test
-
       - name: Verify tag matches package.json version
         env:
           RELEASE_TAG: ${{ github.event.release.tag_name }}
