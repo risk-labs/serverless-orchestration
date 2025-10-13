@@ -1,0 +1,60 @@
+# This publishing workflow uses Trusted Publishing, as recommended by npm.
+# https://docs.npmjs.com/trusted-publishers
+name: Release Publish
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  publish-npm:
+    if: ${{ github.event.release.prerelease == false }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Use Node.js 20.x
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20.x
+          registry-url: https://registry.npmjs.org
+
+      - name: Update npm
+        run: npm install -g npm@latest
+
+      - name: Log Node & npm versions (after update)
+        # Make sure we hit 11.5.1 version requirement for Trusted Publishing
+        run: |
+          node -v
+          npm -v
+
+      - name: Install dependencies
+        run: yarn install --frozen-lockfile
+
+      - name: Build
+        run: yarn build
+
+      - name: Run tests
+        run: yarn test
+
+      - name: Verify tag matches package.json version
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          TAG="${RELEASE_TAG#refs/tags/}"
+          TAG="${TAG#v}"
+          PKG_VERSION=$(node -p "require('./package.json').version")
+          echo "Release tag: $TAG"
+          echo "package.json version: $PKG_VERSION"
+          if [ "$TAG" != "$PKG_VERSION" ]; then
+            echo "Tag ($TAG) does not match package.json version ($PKG_VERSION)"
+            exit 1
+          fi
+
+      - name: Publish to npm
+        run: npm publish --verbose

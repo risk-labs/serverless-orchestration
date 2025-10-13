@@ -1,0 +1,36 @@
+name: Tests
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  push:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js 20.x
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+          cache: 'yarn'
+      
+      - name: Install dependencies
+        run: yarn install --frozen-lockfile
+      
+      - name: Start local blockchain node
+        run: |
+          npx ganache-cli --port 9545 --host 127.0.0.1 --gasLimit 0x1fffffffffffff --gasPrice 0x1 --accounts 10 --defaultBalanceEther 1000 --deterministic &
+          sleep 5
+        env:
+          HARDHAT_NETWORK: localhost
+      
+      - name: Run tests
+        run: yarn test
+        env:
+          HARDHAT_NETWORK: localhost
