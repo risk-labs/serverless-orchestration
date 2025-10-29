@@ -983,10 +983,10 @@
   resolved "https://registry.yarnpkg.com/@redis/time-series/-/time-series-1.1.0.tgz#cba454c05ec201bd5547aaf55286d44682ac8eb5"
   integrity sha512-c1Q99M5ljsIuc4YdaCwfUEXsofakb9c8+Zse2qxTadu8TalLXuAESzLvFAvNVbkmSlvlzIQOLpBCmWI9wTOt+g==
 
-"@risk-labs/logger@^1.3.7":
-  version "1.3.7"
-  resolved "https://registry.yarnpkg.com/@risk-labs/logger/-/logger-1.3.7.tgz#2dc38e73aee8d009283d581fbde438f33fb2f118"
-  integrity sha512-fQMKaP/6hcUe9ocEBcA0LLraKO+RO3giJ1RSXfeOcCllFIHWavJeMEmCAej1EurSFeqr1BsucCm2tqRizMhjGg==
+"@risk-labs/logger@^1.3.8":
+  version "1.3.8"
+  resolved "https://registry.yarnpkg.com/@risk-labs/logger/-/logger-1.3.8.tgz#85bf29e8ab8773a26cea29a5b1aecd2fb4a709d2"
+  integrity sha512-S+c42bnpjlSJ/bD4V4tGQabRvao40v1LoaQ5miRIYpYFnRLSBB1wPJGQoPTI3R7raZjxFupQYaX8Ache68vk0A==
   dependencies:
     "@google-cloud/logging-winston" "^4.1.1"
     "@google-cloud/trace-agent" "^5.1.6"
