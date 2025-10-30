@@ -1,28 +1,44 @@
-# This publishing workflow uses Trusted Publishing, as recommended by npm.
-# https://docs.npmjs.com/trusted-publishers
-name: Release Publish
+# When making a release, please keep in mind that this action expects and validates a few things:
+# - Releases marked as drafts will be ignored (ie. they will not publish).
+# - Ensure that package.json has a version.
+# - Ensure the git tag you create during the release process starts with a v (ie. v1.2.3).
+# - Ensure that the version in package.json matches the release tag created.
+# - Ensure versions are valid semver format.
+# - Ensure the GitHub release is marked as a pre-release if the semver version has a pre-release tag.
 
+# This script was inspired by this README: https://github.com/marketplace/actions/github-releases-for-automated-package-publishing
+
+name: Publish Package to npmjs
 on:
   release:
-    types: [published]
-
+    types: [created]
 permissions:
   id-token: write
   contents: read
-
+env:
+  NODE_OPTIONS: "--max_old_space_size=4096"
 jobs:
-  publish-npm:
-    if: ${{ github.event.release.prerelease == false }}
+  build:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Use Node.js 20.x
-        uses: actions/setup-node@v4
+      # Note we set an `id` called `release`. We'll use that later...
+      - name: Validate and extract release information
+        id: release
+        uses: manovotny/github-releases-for-automated-package-publishing-action@v2.0.1
+
+      - name: Install dependencies
+        run: yarn install --frozen-lockfile
+
+      - name: Build
+        run: yarn build
+
+      # Setup .npmrc file to publish to npm
+      - uses: actions/setup-node@v4
         with:
-          node-version: 20.x
-          registry-url: https://registry.npmjs.org
+          node-version: "20"
+          registry-url: "https://registry.npmjs.org"
 
       - name: Update npm
         run: npm install -g npm@latest
@@ -33,22 +49,29 @@ jobs:
           node -v
           npm -v
 
-      - name: Install dependencies
-        run: yarn install --frozen-lockfile
+      # The last two steps will publish the package. Note that we're using
+      # information from the `release` step above (I told you we'd use it
+      # later). Notice the `if` statements on both steps...
+      #
+      # If there *is* a tag (ie. `beta`, `canary`, etc.), we publish a
+      # "pre-release" or "tagged" version of a package (ie. 1.2.3-beta.1).
+      #
+      # If there *is not* a tag (ie. `beta`, `canary`, etc.), we publish a
+      # version of a package (ie. 1.2.3).
+      #
+      # This example is using npm to publish, but you could just as easily
+      # use yarn, if you prefer. It's also publishing to the NPM registry,
+      # thus, it's using `NPM_TOKEN`, but you could just as easily use
+      # `GITHUB_TOKEN` if you were publishing to the GitHub Package registry.
 
-      - name: Verify tag matches package.json version
-        env:
-          RELEASE_TAG: ${{ github.event.release.tag_name }}
-        run: |
-          TAG="${RELEASE_TAG#refs/tags/}"
-          TAG="${TAG#v}"
-          PKG_VERSION=$(node -p "require('./package.json').version")
-          echo "Release tag: $TAG"
-          echo "package.json version: $PKG_VERSION"
-          if [ "$TAG" != "$PKG_VERSION" ]; then
-            echo "Tag ($TAG) does not match package.json version ($PKG_VERSION)"
-            exit 1
-          fi
+      # This will publish a "pre-release" or "tagged" version of a package.
 
-      - name: Publish to npm
-        run: npm publish --verbose
+      # This will publish a version of a package.
+      - name: Publish version
+        if: steps.release.outputs.tag == ''
+        run: npm publish
+
+      - name: Publish tagged version
+        if: steps.release.outputs.tag != ''
+        run: npm publish --tag ${{ steps.release.outputs.tag }}
+      
