@@ -17,9 +17,8 @@ const winston = require("winston");
 const sinon = require("sinon");
 const { SpyTransport, lastSpyLogIncludes, spyLogIncludes, lastSpyLogLevel } = require("@risk-labs/logger");
 
-// Use Hardhat Network to create additional providers with different chain IDs.
-const { createHardhatNetworkProvider } = require("hardhat/internal/hardhat-network/provider/provider");
-const { JsonRpcServer } = require("hardhat/internal/hardhat-network/jsonrpc/server");
+// Use Ganache to create additional providers with different chain IDs.
+const ganache = require("ganache-core");
 
 describe("ServerlessHub.js", function () {
   const defaultPricefeedConfig = { type: "test", currentPrice: "1", historicalPrice: "1" };
@@ -37,7 +36,7 @@ describe("ServerlessHub.js", function () {
 
   let defaultChainId;
 
-  let hardhatServers = []; // keep track of all hardhat server instances so they can be closed after each test to avoid port conflicts
+  let ganacheServers = []; // keep track of all ganache instances so they can be closed after each test to avoid port conflicts
   let setEnvironmentVariableKeys = []; // record all envs set within a test to unset them after in the afterEach block
 
   const setEnvironmentVariable = (key, value) => {
@@ -55,10 +54,11 @@ describe("ServerlessHub.js", function () {
     setEnvironmentVariableKeys = [];
   };
 
-  const closeHardhatServers = async () => {
-    for (let i = hardhatServers.length - 1; i >= 0; i--) {
-      await hardhatServers[i].close();
-      hardhatServers.pop();
+  const closeGanacheServers = () => {
+    for (let i = ganacheServers.length - 1; i >= 0; i--) {
+      const ganacheServer = ganacheServers[i];
+      ganacheServer.close();
+      ganacheServers.pop();
     }
   };
 
@@ -66,36 +66,10 @@ describe("ServerlessHub.js", function () {
     return request(`http://localhost:${port}`).post("/").send(body).set("Accept", "application/json");
   };
 
-  const startHardhatServer = async (chainId, port) => {
-    const provider = await createHardhatNetworkProvider(
-      {
-        chainId,
-        networkId: chainId,
-        hardfork: "cancun",
-        blockGasLimit: 30_000_000,
-        minGasPrice: 0n,
-        automine: true,
-        intervalMining: 0,
-        mempoolOrder: "fifo",
-        chains: new Map(),
-        genesisAccounts: [
-          {
-            privateKey: "0xac0974bec39a17e36ba4a6b4d238ff944bacb476c6b8d6c1f20ff7c92fbc3c72",
-            balance: "10000000000000000000000",
-          },
-        ],
-        allowUnlimitedContractSize: false,
-        throwOnTransactionFailures: true,
-        throwOnCallFailures: true,
-        enableTransientStorage: true,
-        enableRip7212: false,
-      },
-      { enabled: false }
-    );
-
-    const server = new JsonRpcServer({ hostname: "127.0.0.1", port, provider });
-    await server.listen();
-    hardhatServers.push(server);
+  const startGanacheServer = (chainId, port) => {
+    const node = ganache.server({ _chainIdRpc: chainId });
+    node.listen(port);
+    ganacheServers.push(node);
     return viem.createPublicClient({ transport: viem.http(`http://127.0.0.1:${port}`) });
   };
 
@@ -135,7 +109,7 @@ describe("ServerlessHub.js", function () {
     hubInstance.close();
     spokeInstance.close();
     unsetEnvironmentVariables();
-    await closeHardhatServers();
+    closeGanacheServers();
   });
 
   it("ServerlessHub rejects empty json request bodies", async function () {
@@ -504,7 +478,7 @@ describe("ServerlessHub.js", function () {
     // Temporarily spin up a new provider with an overridden chain ID. The hub
     // should be able to detect the alternative node URL and fetch its chain ID.
     const alternateChainId = 666;
-    const altProvider = await startHardhatServer(alternateChainId, 7777);
+    const altProvider = startGanacheServer(alternateChainId, 7777);
     const hubConfig = {
       testServerlessMonitor: {
         // eslint-disable-next-line no-useless-escape
@@ -546,7 +520,7 @@ describe("ServerlessHub.js", function () {
     // Temporarily spin up a new provider with an overridden chain ID. The hub should be able to detect
     // the alternative network when passed together with default network within the same bot config.
     const alternateChainId = 666;
-    const altProvider = await startHardhatServer(alternateChainId, 7777);
+    const altProvider = startGanacheServer(alternateChainId, 7777);
 
     const hubConfig = {
       testServerlessBot: {
@@ -586,7 +560,7 @@ describe("ServerlessHub.js", function () {
     // block number for this alternative network when passed together with default network within the same bot config.
     const alternateChainId = 666;
     const alternatePort = 7777;
-    const altProvider = await startHardhatServer(alternateChainId, alternatePort);
+    const altProvider = startGanacheServer(alternateChainId, alternatePort);
 
     // Mine additional block and store its number.
     await altProvider.request({ method: "evm_mine", params: [] });
