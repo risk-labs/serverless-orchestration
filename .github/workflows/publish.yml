@@ -25,4 +25,17 @@ jobs:
           registry-url: "https://registry.npmjs.org"
           cache: "yarn"
       - run: yarn install --frozen-lockfile
-      - run: npm publish
+      - name: Determine publish tag
+        id: tag
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          # Extract pre-release identifier (e.g. "beta" from "1.0.0-beta.1")
+          PRE=$(echo "$VERSION" | sed -n 's/.*-\([a-zA-Z]*\).*/\1/p')
+          echo "pre=$PRE" >> "$GITHUB_OUTPUT"
+      - name: Publish
+        run: |
+          if [ -n "${{ steps.tag.outputs.pre }}" ]; then
+            npm publish --tag ${{ steps.tag.outputs.pre }}
+          else
+            npm publish
+          fi
