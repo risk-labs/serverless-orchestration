@@ -24,6 +24,13 @@ jobs:
           always-auth: true
           registry-url: "https://registry.npmjs.org"
           cache: "yarn"
+      # Trusted Publishing requires npm >= 11.5.1
+      - name: Update npm
+        run: npm install -g npm@latest
+      - name: Log Node & npm versions
+        run: |
+          node -v
+          npm -v
       - run: yarn install --frozen-lockfile
       - name: Determine publish tag
         id: tag
