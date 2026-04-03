@@ -12,8 +12,8 @@ The two serverless orchestration scripts are:
 
 ### Run tests 🦾
 
-To run tests, you'll need to start ganache on port 9545:
+To run tests, you'll need to start a local hardhat node on port 9545:
 
 ```
-yarn ganache-cli -e 1000000000 -p 9545 -l 9000000 -d
+npx hardhat node --port 9545
 ```
