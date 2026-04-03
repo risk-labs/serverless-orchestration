@@ -26,9 +26,7 @@ jobs:
       - name: Start local blockchain node
         run: |
           npx hardhat node --port 9545 &
-          sleep 5
-        env:
-          HARDHAT_NETWORK: localhost
+          for i in $(seq 1 30); do curl -sf -o /dev/null http://127.0.0.1:9545/ && break; sleep 1; done
 
       - name: Run tests
         run: yarn test
