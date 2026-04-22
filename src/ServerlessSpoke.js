@@ -1,3 +1,5 @@
+#!/usr/bin/env node
+
 /**
  * @notice This script enables serverless functions to execute any arbitrary command from the UMA/Across Docker container.
  * This can be run on a local machine, within GCP cloud run or GCP cloud function environments. Cloud Run provides a
