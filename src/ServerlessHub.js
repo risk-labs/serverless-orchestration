@@ -1,3 +1,5 @@
+#!/usr/bin/env node
+
 /**
  * @notice This script reads in a global configuration file stored and executes  parallel serverless instances for each
  * configured bot. This enables one global config file to define all bot instances. This drastically simplifying the
