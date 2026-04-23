@@ -24,6 +24,9 @@
     "supertest": "^4.0.2",
     "winston": "^3.11.0"
   },
+  "resolutions": {
+    "protobufjs": "^7.5.3"
+  },
   "homepage": "https://risklabs.foundation",
   "license": "AGPL-3.0-or-later",
   "publishConfig": {
