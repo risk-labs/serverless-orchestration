@@ -22,6 +22,18 @@
  * This script assumes the caller is providing a HTTP POST with a body formatted as:
  * {"bucket":"<config-bucket>","configFile":"<config-file-name>"}
  */
+
+// Catch transport-layer rejections and other async errors that would otherwise terminate the Node process. The
+// @google-cloud/logging-winston transport rejects its underlying gRPC call when the Cloud Logging API is unreachable
+// (e.g. gax 60s API timeout) with no in-handler catch, which Node surfaces as an unhandledRejection and exits with
+// code 1, taking the in-flight hub request down with it. Logging via console.error avoids re-entering winston.
+process.on("unhandledRejection", (reason) => {
+  console.error("[ServerlessHub] unhandledRejection", reason);
+});
+process.on("uncaughtException", (err) => {
+  console.error("[ServerlessHub] uncaughtException", err);
+});
+
 const assert = require("assert");
 const viem = require("viem");
 const retry = require("async-retry");
