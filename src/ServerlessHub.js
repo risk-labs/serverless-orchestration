@@ -100,6 +100,11 @@ const defaultHubConfig = {
 
 const waitForLoggerDelay = WAIT_FOR_LOGGER_DELAY || 5;
 
+// Lightweight liveness/warm-up endpoint. Returns 200 without doing any work. Used by the
+// deploy pipeline to pre-warm Cloud Run instances after a new revision rolls out, so the
+// first POST / from the cron scheduler doesn't pay a cold-start tax.
+hub.get("/health", (_req, res) => res.status(200).send({ ok: true }));
+
 hub.post("/", async (req, res) => {
   // Use a custom logger if provided. Otherwise, initialize a local logger.
   // Note: no reason to put this into the try-catch since a logger is required to throw the error.
