@@ -23,6 +23,11 @@ let customLogger;
 
 const waitForLoggerDelay = process.env.WAIT_FOR_LOGGER_DELAY || 5;
 
+// Lightweight liveness/warm-up endpoint. Returns 200 without doing any work, so the deploy
+// pipeline can issue parallel GETs after `gcloud run deploy` to force Cloud Run to spin up
+// fresh instances before the next hub tick fans out POSTs.
+spoke.get("/health", (_req, res) => res.status(200).send({ ok: true }));
+
 spoke.post("/", async (req, res) => {
   // Use a custom logger if provided. Otherwise, initialize a local logger with a run identifier if passed from the Hub.
   // Note: no reason to put this into the try-catch since a logger is required to throw the error.
