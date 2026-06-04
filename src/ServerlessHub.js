@@ -61,6 +61,12 @@ const { Datastore } = require("@google-cloud/datastore"); // Used to read/write 
 const datastore = new Datastore();
 const { delay, createNewLogger, generateRandomRunId } = require("@risk-labs/logger");
 
+// Per-spoke failure tracking + PD Events API client. Used to gate paging on consecutive failures
+// and emit resolve events when a previously-failing spoke recovers. See SpokeFailureState.js /
+// PagerDutyEvents.js for details.
+const spokeFailureState = require("./SpokeFailureState");
+const pagerDutyEvents = require("./PagerDutyEvents");
+
 let customLogger;
 let spokeUrl;
 // spokeUrlTable is an optional table populated through the env var SPOKE_URLS. SPOKE_URLS is expected to be a
@@ -96,7 +102,16 @@ const defaultHubConfig = {
   saveQueriedBlock: "localStorage",
   spokeRunner: "localStorage",
   rejectSpokeDelay: 120, // 2 min.
+  // Mirror of saveQueriedBlock for the new per-spoke failure state store. Defaults to localStorage
+  // so tests work without GCP. Production should set this to "gcp" alongside saveQueriedBlock.
+  spokeFailureStateBackend: "localStorage",
+  // Number of *consecutive* hub-run failures of the same spoke required before paging via the
+  // PagerDuty Events API. First N-1 failures stay Slack-only. Set to 1 to page on every failure.
+  spokeFailurePageThreshold: 2,
 };
+
+// PagerDuty Events API client; constructed inside Poll() so the integration key is loaded once.
+let pdEventsClient = pagerDutyEvents.makeClient();
 
 const waitForLoggerDelay = WAIT_FOR_LOGGER_DELAY || 5;
 
@@ -310,9 +325,20 @@ hub.post("/", async (req, res) => {
         _processSpokeResponse(retriedOutputs[index], result, validOutputs, errorOutputs);
       });
     }
+    // Update per-spoke failure state + emit PagerDuty trigger/resolve events. Runs for *both*
+    // success-only and partial-failure outcomes (a recovered spoke needs a resolve event even
+    // when other spokes succeeded). See SpokeFailureState.js / PagerDutyEvents.js.
+    const pagingResult = await _updateSpokeStateAndPage({
+      configFile: req.body.configFile,
+      configObject,
+      validOutputs,
+      errorOutputs,
+      logger,
+    });
+
     // If there are any error outputs(from the original loop or from re-tried calls) then throw.
     if (Object.keys(errorOutputs).length > 0) {
-      throw { errorOutputs, validOutputs, retriedOutputs };
+      throw { errorOutputs, validOutputs, retriedOutputs, pagingResult };
     }
 
     // If no errors and got to this point correctly then return a 200 success status.
@@ -350,6 +376,12 @@ hub.post("/", async (req, res) => {
         message: "Some spoke calls returned errors (details)🚨",
         output: errorOutput,
       });
+      // Only attach `notificationPath: infrastructure-error` (which fires the logger's PagerDuty
+      // transport) when the Events-API client is *not* configured. With the Events-API path
+      // active, paging is gated by consecutive-failure threshold + stable dedup_key — letting the
+      // logger transport also fire would double-page and undo the dedup. The hub-internal fatal
+      // branch (above) always pages; this branch is for partial spoke failures.
+      const eventsApiHandledPaging = pdEventsClient.enabled;
       logger.error({
         at: "ServerlessHub",
         message: "Some spoke calls returned errors 🚨",
@@ -369,7 +401,8 @@ hub.post("/", async (req, res) => {
           }
         }), // eslint-disable-line indent
         validOutputs: Object.keys(errorOutput.validOutputs), // eslint-disable-line indent
-        notificationPath: "infrastructure-error",
+        pagingResult: errorOutput.pagingResult,
+        ...(eventsApiHandledPaging ? {} : { notificationPath: "infrastructure-error" }),
       });
     }
 
@@ -633,6 +666,131 @@ function _processSpokeResponse(botKey, spokeResponse, validOutputs, errorOutputs
   }
 }
 
+// Walks every spoke that ran this hub-tick, updates persisted per-spoke state, and decides
+// whether to fire a PagerDuty trigger (failure crossed threshold) or resolve (previously-open
+// incident has recovered). Returns an aggregate for inclusion in the hub's response/log payload.
+async function _updateSpokeStateAndPage({ configFile, configObject, validOutputs, errorOutputs, logger }) {
+  const spokeNames = Object.keys(configObject);
+  const triggered = [];
+  const resolved = [];
+  const suppressed = []; // failed but below threshold — Slack-only.
+  const stillFailing = []; // failed and already past threshold (open incident kept alive).
+
+  for (const spokeName of spokeNames) {
+    let prior;
+    try {
+      prior = await spokeFailureState.loadState({ configFile, spokeName, hubConfig, logger });
+    } catch (err) {
+      logger.warn({
+        at: "ServerlessHub",
+        message: "Failed to load spoke failure state - skipping paging logic for this spoke",
+        spokeName,
+        error: err.toString(),
+      });
+      continue;
+    }
+
+    const failure = errorOutputs[spokeName];
+    const success = validOutputs[spokeName];
+
+    if (success && !failure) {
+      // Spoke recovered (or was healthy all along). Emit a resolve only if we had previously paged.
+      if (prior.openIncidentDedupKey) {
+        try {
+          await pdEventsClient.resolve({ dedupKey: prior.openIncidentDedupKey });
+          resolved.push({ spokeName, dedupKey: prior.openIncidentDedupKey });
+        } catch (err) {
+          logger.warn({
+            at: "ServerlessHub",
+            message: "PagerDuty resolve failed - will retry on next successful run",
+            spokeName,
+            error: err.toString(),
+          });
+          // Keep prior state so we try again next tick rather than losing the open-incident pointer.
+          continue;
+        }
+      }
+      const next = spokeFailureState.defaultState();
+      try {
+        await spokeFailureState.saveState({ configFile, spokeName, state: next, hubConfig, logger });
+      } catch (err) {
+        logger.warn({
+          at: "ServerlessHub",
+          message: "Failed to save reset spoke state - will retry next tick",
+          spokeName,
+          error: err.toString(),
+        });
+      }
+      continue;
+    }
+
+    if (!failure) continue; // Spoke didn't run this tick (shouldn't happen, but be safe).
+
+    // Spoke failed. Increment counter, possibly page.
+    const errorKind = failure.status === "timeout" ? "timeout" : "execution-error";
+    const errorMessage = failure.message ?? failure.error ?? "unknown";
+    const nextCount = (prior.consecutiveFailures || 0) + 1;
+    const threshold = hubConfig.spokeFailurePageThreshold;
+    let openIncidentDedupKey = prior.openIncidentDedupKey;
+
+    if (nextCount >= threshold) {
+      const dedupKey = openIncidentDedupKey || `serverless-hub:${configFile}:${spokeName}`;
+      try {
+        await pdEventsClient.trigger({
+          dedupKey,
+          summary: `serverless-hub ${configFile}: spoke "${spokeName}" failing (${nextCount} consecutive runs, ${errorKind})`,
+          severity: "error",
+          source: `serverless-hub:${configFile}`,
+          customDetails: {
+            spokeName,
+            configFile,
+            consecutiveFailures: nextCount,
+            errorKind,
+            errorMessage,
+            retriedThisRun: failure.runIds ? failure.runIds.length > 1 : undefined,
+          },
+        });
+        if (!openIncidentDedupKey) triggered.push({ spokeName, dedupKey, consecutiveFailures: nextCount });
+        else stillFailing.push({ spokeName, dedupKey, consecutiveFailures: nextCount });
+        openIncidentDedupKey = dedupKey;
+      } catch (err) {
+        logger.warn({
+          at: "ServerlessHub",
+          message: "PagerDuty trigger failed - state still updated, will retry on next tick",
+          spokeName,
+          error: err.toString(),
+        });
+      }
+    } else {
+      suppressed.push({ spokeName, consecutiveFailures: nextCount, threshold });
+    }
+
+    try {
+      await spokeFailureState.saveState({
+        configFile,
+        spokeName,
+        state: {
+          consecutiveFailures: nextCount,
+          lastErrorKind: errorKind,
+          lastErrorMessage: typeof errorMessage === "string" ? errorMessage.slice(0, 2000) : String(errorMessage).slice(0, 2000),
+          openIncidentDedupKey,
+        },
+        hubConfig,
+        logger,
+      });
+    } catch (err) {
+      logger.warn({
+        at: "ServerlessHub",
+        message: "Failed to save spoke failure state - threshold may be off by one next tick",
+        spokeName,
+        error: err.toString(),
+      });
+    }
+  }
+
+  return { triggered, resolved, suppressed, stillFailing };
+}
+
 // Returns a promise that is rejected after seconds delay. Used to limit how long a spoke can run for.
 const _rejectAfterDelay = (seconds, childProcessIdentifier) =>
   new Promise((_, reject) => {
@@ -663,6 +821,13 @@ async function Poll(_customLogger, port = 8080, _spokeURL, _CustomNodeUrl, _hubC
   customNodeUrl = _CustomNodeUrl;
   if (_hubConfig) hubConfig = { ...defaultHubConfig, ..._hubConfig };
   else hubConfig = defaultHubConfig;
+
+  // PagerDuty Events API client. Tests inject `hubConfig._pdEventsClient` (a stub) directly; in
+  // production we build one from PD_EVENTS_INTEGRATION_KEY. Without a key the client is a no-op
+  // and the old logger-driven paging path remains active (see catch block).
+  pdEventsClient =
+    hubConfig._pdEventsClient ||
+    pagerDutyEvents.makeClient({ integrationKey: process.env.PD_EVENTS_INTEGRATION_KEY, logger });
 
   return hub.listen(port, () => {
     logger.debug({
