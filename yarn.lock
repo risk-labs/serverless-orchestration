@@ -878,10 +878,10 @@
   resolved "https://registry.yarnpkg.com/@redis/time-series/-/time-series-1.1.0.tgz#cba454c05ec201bd5547aaf55286d44682ac8eb5"
   integrity sha512-c1Q99M5ljsIuc4YdaCwfUEXsofakb9c8+Zse2qxTadu8TalLXuAESzLvFAvNVbkmSlvlzIQOLpBCmWI9wTOt+g==
 
-"@risk-labs/logger@^1.3.11":
-  version "1.3.11"
-  resolved "https://registry.yarnpkg.com/@risk-labs/logger/-/logger-1.3.11.tgz#ff37a8199dfcd170450e8374e69717288733992d"
-  integrity sha512-WqTteLQA+ZMmblsbveHpBzwvCRUO5ir5kB3janSsqAu3jFYi0W6uOSdmb63ibbc7W8wylr2FD3UXXZaNgTs2cA==
+"@risk-labs/logger@^1.3.14":
+  version "1.3.14"
+  resolved "https://registry.yarnpkg.com/@risk-labs/logger/-/logger-1.3.14.tgz"
+  integrity sha512-lZUWt/5WaUNoGhQmwjEOpCbfNOcl+kVg1151Hezi6DxGAxtL/i2P1u7/fnvDzb2CH6FJPBbRAeBqWLmaOtIa8Q==
   dependencies:
     "@discordjs/rest" "^2.6.1"
     "@google-cloud/logging-winston" "^6.0.1"
