@@ -28,7 +28,7 @@ const retry = require("async-retry");
 const express = require("express");
 const hub = express();
 hub.use(express.json()); // Enables json to be parsed by the express process.
-require("dotenv").config();
+require("dotenv").config({ quiet: true }); // quiet suppresses dotenv's startup log line.
 const fetch = require("node-fetch");
 const fetchWithRetry = require("fetch-retry")(fetch);
 const { URL } = require("url");
