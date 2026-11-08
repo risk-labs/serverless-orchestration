@@ -15,7 +15,7 @@
     "fetch-retry": "^5.0.3",
     "google-auth-library": "^10.6.2",
     "node-fetch": "^2.3.0",
-    "viem": "^2.47.0"
+    "viem": "~2.57.16"
   },
   "devDependencies": {
     "chai": "^4.2.0",
