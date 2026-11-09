@@ -10,11 +10,6 @@ name: Publish Package to npmjs
 on:
   release:
     types: [created]
-  # Manual fallback for a publish that failed after its release was created:
-  # `release: created` fires only once per release, and GitHub's "re-run" reuses the
-  # workflow file from the original run's commit, so a run that failed due to a workflow
-  # bug can't pick up the fix — short of deleting and recreating the release.
-  workflow_dispatch:
 permissions:
   id-token: write
   contents: read
@@ -29,11 +24,10 @@ jobs:
           always-auth: true
           registry-url: "https://registry.npmjs.org"
           cache: "yarn"
-      # Trusted Publishing requires npm >= 11.5.1. Pinned to a major rather than `latest`:
-      # npm majors raise their required node version over time (npm@12 requires node >= 22.22.2),
-      # so `latest` can break the release at any moment.
+      # Trusted Publishing requires npm >= 11.5.1. npm@latest raises its node floor over time
+      # (npm@12 needs node >= 22.22.2), so node-version above must track latest 22.x, not a patch.
       - name: Update npm
-        run: npm install -g npm@12
+        run: npm install -g npm@latest
       - name: Log Node & npm versions
         run: |
           node -v
